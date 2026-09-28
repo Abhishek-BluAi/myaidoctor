@@ -538,7 +538,7 @@ async function discoverClaudeModel(apiKey: string): Promise<string | null> {
 }
 
 async function generateAIResponse(config: { provider: string; apiKey: string; model: string; baseUrl?: string }, history: ChatMessage[], newMessage: string, state: ConversationState) {
-  const systemPrompt = buildClaudeSystemPrompt(state, body.language); // works for all providers
+  const systemPrompt = buildClaudeSystemPrompt(state); // works for all providers
 
   switch (config.provider) {
     case "claude": return callClaude(config, systemPrompt, history, newMessage);

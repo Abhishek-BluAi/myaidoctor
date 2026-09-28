@@ -40,7 +40,7 @@ export async function checkPermission(
   if (!user) return null;
 
   const perms: PermissionEntry[] = user.customRole
-    ? (user.customRole.permissions as PermissionEntry[]) || []
+    ? (user.customRole.permissions as unknown as PermissionEntry[]) || []
     : defaultPermissionsForRole(user.role);
 
   return hasPermission(perms, resource, action) ? token : null;

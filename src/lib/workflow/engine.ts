@@ -157,11 +157,11 @@ export async function synthesize(
       status: "READY",
       chiefComplaint: intake.chiefComplaint,
       hpiNarrative: soap.subjective,
-      reviewOfSystems: intake.reviewOfSystems,
+      reviewOfSystems: intake.reviewOfSystems as any,
       medicationChanges: intake.medicationChanges,
       allergyUpdates: intake.allergyUpdates,
-      differentials: soap.differentials,
-      redFlags: soap.redFlags,
+      differentials: soap.differentials as any,
+      redFlags: soap.redFlags as any,
       recommendations: brief.suggestedActions,
       soapNote: soap as any,
       clinicalSummary: brief.clinicalNarrative,
@@ -176,11 +176,11 @@ export async function synthesize(
       status: "READY",
       chiefComplaint: intake.chiefComplaint,
       hpiNarrative: soap.subjective,
-      reviewOfSystems: intake.reviewOfSystems,
+      reviewOfSystems: intake.reviewOfSystems as any,
       medicationChanges: intake.medicationChanges,
       allergyUpdates: intake.allergyUpdates,
-      differentials: soap.differentials,
-      redFlags: soap.redFlags,
+      differentials: soap.differentials as any,
+      redFlags: soap.redFlags as any,
       recommendations: brief.suggestedActions,
       soapNote: soap as any,
       clinicalSummary: brief.clinicalNarrative,
@@ -243,11 +243,11 @@ export async function autoScheduleWorkflows(): Promise<number> {
  * Find workflows with pending retries that are due.
  */
 export async function findDueRetries(): Promise<any[]> {
-  return prisma.preVisitWorkflow.findMany({
+  const pending = await prisma.preVisitWorkflow.findMany({
     where: {
       stage: "ENGAGING",
       nextRetryAt: { lte: new Date() },
-      callAttempts: { lt: prisma.raw`max_call_attempts` },
     },
   });
+  return pending.filter(p => p.callAttempts < p.maxCallAttempts);
 }

@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   let where: any = {};
   if (scope === "patient") {
     // Patient sees only their own
-    const patient = await prisma.patient.findFirst({ where: { userId: token.id as string } });
+    const patient = await prisma.patient.findFirst({ where: { email: token.email as string } });
     if (patient) where.patientId = patient.id;
     else return NextResponse.json({ entries: [] });
   } else if (scope === "clinic" && clinicId) {
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
   });
 
   // Hydrate patient names
-  const patientIds = [...new Set(entries.map(e => e.patientId))];
+  const patientIds = Array.from(new Set(entries.map(e => e.patientId)));
   const patients = await prisma.patient.findMany({
     where: { id: { in: patientIds } },
     select: { id: true, firstName: true, lastName: true, phone: true, email: true },
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
   patients.forEach(p => { patientMap[p.id] = p; });
 
   // Hydrate provider names
-  const providerIds = [...new Set(entries.filter(e => e.providerId).map(e => e.providerId!))];
+  const providerIds = Array.from(new Set(entries.filter(e => e.providerId).map(e => e.providerId!)));
   const providers = providerIds.length > 0 ? await prisma.user.findMany({
     where: { id: { in: providerIds } },
     select: { id: true, firstName: true, lastName: true },
@@ -207,7 +207,7 @@ export async function POST(req: NextRequest) {
       where: { status: { in: ["COMPLETED", "CHECKED_IN"] } },
       select: { patientId: true },
     });
-    const attendedPatientIds = [...new Set(completedAppts.map(a => a.patientId))];
+    const attendedPatientIds = Array.from(new Set(completedAppts.map(a => a.patientId)));
 
     const result = await prisma.cancellationWaitlist.updateMany({
       where: { patientId: { in: attendedPatientIds }, status: { in: ["active", "notified"] } },

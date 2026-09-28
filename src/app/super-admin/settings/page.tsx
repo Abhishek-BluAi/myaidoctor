@@ -41,13 +41,13 @@ export default function SettingsPage() {
 }
 
 function SettingsContent() {
-  const [settings, setSettings] = useState({});
+  const [settings, setSettings] = useState<any>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [tab, setTab] = useState("platform");
   const [testEmail, setTestEmail] = useState("");
-  const [testResult, setTestResult] = useState(null);
+  const [testResult, setTestResult] = useState<any>(null);
   const [testing, setTesting] = useState(false);
   const [locked, setLocked] = useState(true);
   const [showSaveConfirm, setShowSaveConfirm] = useState(false);
@@ -78,7 +78,7 @@ function SettingsContent() {
     }).finally(() => setLoading(false));
   }, []);
 
-  function update(key, value) { setSettings(s => ({ ...s, [key]: value })); }
+  const update = (key: string, value: any) => { setSettings((s: any) => ({ ...s, [key]: value })); };
 
   async function handleSave() {
     setSaving(true); setMsg("");

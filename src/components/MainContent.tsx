@@ -15,7 +15,7 @@ export default function MainContent({ children }: { children: React.ReactNode })
       setIsDesktop(window.innerWidth >= 1024);
       const handleResize = () => setIsDesktop(window.innerWidth >= 1024);
       window.addEventListener("resize", handleResize);
-      function onToggle(e: Event) { setCollapsed((e as CustomEvent).detail.collapsed); }
+      const onToggle = (e: Event) => { setCollapsed((e as CustomEvent).detail.collapsed); };
       window.addEventListener("sidebar-toggle", onToggle);
       return () => { window.removeEventListener("resize", handleResize); window.removeEventListener("sidebar-toggle", onToggle); };
     }

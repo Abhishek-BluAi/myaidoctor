@@ -22,7 +22,7 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
       setIsDesktop(window.innerWidth >= 1024);
       const hr = () => setIsDesktop(window.innerWidth >= 1024);
       window.addEventListener("resize", hr);
-      function onToggle(e: Event) { setCollapsed((e as CustomEvent).detail.collapsed); }
+      const onToggle = (e: Event) => { setCollapsed((e as CustomEvent).detail.collapsed); };
       window.addEventListener("sidebar-toggle", onToggle);
       return () => { window.removeEventListener("resize", hr); window.removeEventListener("sidebar-toggle", onToggle); };
     }

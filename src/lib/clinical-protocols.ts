@@ -460,5 +460,5 @@ export function selectProtocols(patient: {
   // Sleep screening if sleep complaints
   if (conditions.some(c => /sleep|insomnia|snoring|apnea/i.test(c))) protocols.push("STOP_BANG");
 
-  return [...new Set(protocols)];
+  return Array.from(new Set(protocols));
 }

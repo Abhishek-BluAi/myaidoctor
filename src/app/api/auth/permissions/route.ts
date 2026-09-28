@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
 
   if (user.customRole && user.customRoleId) {
     // Custom role overrides built-in role
-    permissions = (user.customRole.permissions as PermissionEntry[]) || [];
+    permissions = (user.customRole.permissions as unknown as PermissionEntry[]) || [];
   } else {
     // Use default permissions for built-in role
     permissions = defaultPermissionsForRole(user.role);

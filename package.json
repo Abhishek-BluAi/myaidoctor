@@ -15,8 +15,8 @@
     "setup": "prisma generate && prisma db push && node scripts/seed.js"
   },
   "dependencies": {
-    "@prisma/adapter-pg": "^6.9.0",
-    "@prisma/client": "^7.8.0",
+    "@prisma/adapter-pg": "^5.22.0",
+    "@prisma/client": "^5.22.0",
     "bcryptjs": "^2.4.3",
     "clsx": "^2.1.0",
     "date-fns": "^3.6.0",
@@ -26,7 +26,7 @@
     "lucide-react": "^0.383.0",
     "next": "16.2.6",
     "next-auth": "4.24.14",
-    "nodemailer": "^6.9.0",
+    "nodemailer": "^7.0.7",
     "otplib": "^12.0.1",
     "pg": "^8.13.0",
     "qrcode": "^1.5.4",
@@ -38,6 +38,8 @@
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.12.0",
+    "@types/nodemailer": "^8.0.2",
+    "@types/pg": "^8.23.1",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
@@ -45,7 +47,7 @@
     "eslint": "^9.0.0",
     "eslint-config-next": "16.2.6",
     "postcss": "^8.4.0",
-    "prisma": "^7.8.0",
+    "prisma": "^5.22.0",
     "tailwindcss": "^3.4.0",
     "typescript": "^5.4.0"
   }

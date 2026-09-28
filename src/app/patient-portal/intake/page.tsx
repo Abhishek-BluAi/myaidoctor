@@ -31,7 +31,7 @@ function IntakeChat() {
   const resultRef = useRef<any>(null);
   const [listening, setListening] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(false);
-  const [aiStatus, setAiStatus] = useState<{ active: boolean; provider: string; model?: string } | null>(null);
+  const [aiStatus, setAiStatus] = useState<{ active: boolean; provider: string; model?: string; message?: string } | null>(null);
   const [voiceStatus, setVoiceStatus] = useState<any>(null);
   const [callPhone, setCallPhone] = useState("");
   const [callResult, setCallResult] = useState<any>(null);

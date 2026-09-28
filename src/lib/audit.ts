@@ -112,7 +112,7 @@ export async function audit(req: NextRequest, data: AuditData): Promise<void> {
         entityId: data.entityId,
         userId: data.userId || null,
         userEmail: data.userEmail || null,
-        details: data.details || null,
+        details: (data.details || undefined) as any,
         severity: meta.severity,
         ipAddress: extractIp(req),
         userAgent: req.headers.get("user-agent")?.slice(0, 500) || null,
@@ -141,7 +141,7 @@ export async function auditSimple(data: AuditData): Promise<void> {
         entityId: data.entityId,
         userId: data.userId || null,
         userEmail: data.userEmail || null,
-        details: data.details || null,
+        details: (data.details || undefined) as any,
         severity: meta.severity,
       },
     });
@@ -160,4 +160,4 @@ function extractIp(req: NextRequest): string | null {
 
 /** All known action types for the filter UI */
 export const AUDIT_ACTIONS = Object.keys(ACTION_META);
-export const AUDIT_CATEGORIES = [...new Set(Object.values(ACTION_META).map((m) => m.category))];
+export const AUDIT_CATEGORIES = Array.from(new Set(Object.values(ACTION_META).map((m) => m.category)));

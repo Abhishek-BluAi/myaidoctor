@@ -35,4 +35,4 @@ export const ACTION_META: Record<string, { category: string; severity: string }>
 };
 
 export const AUDIT_ACTIONS = Object.keys(ACTION_META);
-export const AUDIT_CATEGORIES = [...new Set(Object.values(ACTION_META).map((m) => m.category))];
+export const AUDIT_CATEGORIES = Array.from(new Set(Object.values(ACTION_META).map((m) => m.category)));
