@@ -16,6 +16,5 @@ services:
 
 
 networks:
-  global:
-    name: global-network
+  global-network:
     external: true
