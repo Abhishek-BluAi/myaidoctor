@@ -6,6 +6,8 @@ services:
     env_file: .env
     networks:
       - global-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.myaidoctor.rule=Host(`myaidoc.bluai.ai`)"
@@ -13,7 +15,6 @@ services:
       - "traefik.http.services.myaidoctor.loadbalancer.server.port=3000"
       - "traefik.http.routers.myaidoctor.tls.certresolver=letsencrypt"
       - "traefik.docker.network=global-network"
-
 
 networks:
   global-network:
