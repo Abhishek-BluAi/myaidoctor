@@ -1,0 +1,609 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Users & Auth ───────────────────────────────────────────
+model User {
+  id            String      @id @default(cuid())
+  email         String      @unique
+  passwordHash  String      @map("password_hash")
+  firstName     String      @map("first_name")
+  lastName      String      @map("last_name")
+  role          UserRole    @default(PROVIDER)
+  specialty     String?
+  npiNumber     String?     @map("npi_number")
+  phone         String?
+  avatarUrl     String?     @map("avatar_url")
+  isActive      Boolean     @default(true) @map("is_active")
+  isApproved    Boolean     @default(false) @map("is_approved")
+  approvedAt    DateTime?   @map("approved_at")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  // MFA fields
+  mfaEnabled    Boolean     @default(false) @map("mfa_enabled")
+  mfaRequired   Boolean     @default(false) @map("mfa_required")
+  mfaMethod     MfaMethod?  @map("mfa_method")
+  mfaSecret     String?     @map("mfa_secret")
+  mfaPhone      String?     @map("mfa_phone")
+  backupCodes   String[]    @default([]) @map("backup_codes")
+  mfaVerifiedAt DateTime?   @map("mfa_verified_at")
+
+  // Custom role (overrides enum role if set)
+  customRoleId  String?     @map("custom_role_id")
+  customRole    CustomRole? @relation(fields: [customRoleId], references: [id])
+
+  // Password reset
+  resetToken    String?     @unique @map("reset_token")
+  resetTokenExp DateTime?   @map("reset_token_exp")
+
+  appointments   Appointment[]
+  preVisitBriefs PreVisitBrief[]
+  voiceCalls     VoiceCall[]
+  clinic         Clinic?    @relation(fields: [clinicId], references: [id])
+  clinicId       String?    @map("clinic_id")
+
+  @@map("users")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  PROVIDER
+  NURSE
+  FRONT_DESK
+  BILLING
+  PATIENT
+}
+
+enum MfaMethod {
+  TOTP
+  SMS
+  WHATSAPP
+}
+
+// ─── Custom Roles & Permissions ─────────────────────────────
+model CustomRole {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  permissions Json     @default("[]")
+  isSystem    Boolean  @default(false) @map("is_system")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  users       User[]
+
+  @@map("custom_roles")
+}
+
+// ─── Hospitals ──────────────────────────────────────────────
+model Hospital {
+  id          String   @id @default(cuid())
+  name        String
+  address     String?
+  city        String?
+  state       String?
+  zip         String?
+  phone       String?
+  website     String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  clinics     Clinic[]
+  agentAssignments AIAgentAssignment[]
+
+  @@map("hospitals")
+}
+
+// ─── Clinics ────────────────────────────────────────────────
+model Clinic {
+  id          String    @id @default(cuid())
+  name        String
+  address     String
+  city        String
+  state       String
+  zip         String
+  phone       String
+  fax         String?
+  ehrSystem   String    @default("Epic") @map("ehr_system")
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  hospitalId  String?   @map("hospital_id")
+  hospital    Hospital? @relation(fields: [hospitalId], references: [id])
+
+  users        User[]
+  patients     Patient[]
+  appointments Appointment[]
+  invitations  Invitation[]
+  pipelineConfigs VoicePipelineConfig[]
+  ehrConnections  EHRConnection[]
+  agentAssignments AIAgentAssignment[]
+
+  @@map("clinics")
+}
+
+// ─── System Settings ────────────────────────────────────────
+model SystemSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("system_settings")
+}
+
+// ─── Patients ───────────────────────────────────────────────
+model Patient {
+  id              String    @id @default(cuid())
+  mrn             String    @unique
+  firstName       String    @map("first_name")
+  lastName        String    @map("last_name")
+  dateOfBirth     DateTime  @map("date_of_birth")
+  gender          String
+  email           String?
+  phone           String
+  altPhone        String?   @map("alt_phone")
+  address         String?
+  city            String?
+  state           String?
+  zip             String?
+  insuranceProvider String?  @map("insurance_provider")
+  insurancePolicyId String?  @map("insurance_policy_id")
+  insuranceGroupId  String?  @map("insurance_group_id")
+  insuranceVerified Boolean  @default(false) @map("insurance_verified")
+  allergies       String[]
+  medications     String[]
+  conditions      String[]
+  preferredLanguage String   @default("en") @map("preferred_language")
+  consentGiven    Boolean   @default(false) @map("consent_given")
+  messageLinks      MessageLink[]
+  isActive        Boolean   @default(true) @map("is_active")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  clinic          Clinic?   @relation(fields: [clinicId], references: [id])
+  clinicId        String?   @map("clinic_id")
+
+  appointments    Appointment[]
+  preVisitBriefs  PreVisitBrief[]
+  voiceCalls      VoiceCall[]
+  workflows       PreVisitWorkflow[]
+
+  @@map("patients")
+}
+
+// ─── Appointments ───────────────────────────────────────────
+model Appointment {
+  id              String            @id @default(cuid())
+  scheduledAt     DateTime          @map("scheduled_at")
+  duration        Int               @default(15)
+  visitType       VisitType         @default(FOLLOW_UP) @map("visit_type")
+  status          AppointmentStatus @default(SCHEDULED)
+  reasonForVisit  String?           @map("reason_for_visit")
+  chiefComplaint  String?           @map("chief_complaint")
+  notes           String?
+  checkedInAt     DateTime?         @map("checked_in_at")
+  completedAt     DateTime?         @map("completed_at")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  patient         Patient           @relation(fields: [patientId], references: [id])
+  patientId       String            @map("patient_id")
+  provider        User              @relation(fields: [providerId], references: [id])
+  providerId      String            @map("provider_id")
+  clinic          Clinic?           @relation(fields: [clinicId], references: [id])
+  clinicId        String?           @map("clinic_id")
+
+  preVisitBrief   PreVisitBrief?
+  voiceCall       VoiceCall?
+  workflow        PreVisitWorkflow?
+
+  @@map("appointments")
+}
+
+enum VisitType {
+  NEW_PATIENT
+  FOLLOW_UP
+  ANNUAL_WELLNESS
+  URGENT
+  TELEHEALTH
+  PROCEDURE
+  PRE_OP
+  POST_OP
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  PRE_VISIT_STARTED
+  PRE_VISIT_COMPLETE
+  CHECKED_IN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  RESCHEDULED
+  NO_SHOW
+}
+
+model CancellationWaitlist {
+  id              String    @id @default(cuid())
+  patientId       String    @map("patient_id")
+  clinicId        String?   @map("clinic_id")
+  providerId      String?   @map("provider_id")
+  originalApptId  String?   @map("original_appt_id")
+  preference      String?   // "earliest", "morning", "afternoon", "anytime"
+  status          String    @default("active") // active, notified, claimed, fulfilled, expired, removed
+  notifiedAt      DateTime? @map("notified_at")
+  expiresAt       DateTime? @map("expires_at")    // 2-min claim window
+  claimedAt       DateTime? @map("claimed_at")
+  claimedSlotId   String?   @map("claimed_slot_id")
+  addedBy         String?   @map("added_by")      // "patient", "staff", "intake"
+  createdAt       DateTime  @default(now()) @map("created_at")
+  notes           String?
+
+  @@map("cancellation_waitlist")
+}
+
+model UserPreference {
+  id          String   @id @default(cuid())
+  userId      String   @unique @map("user_id")
+  themeMode   String   @default("dark") @map("theme_mode")
+  themeAccent String   @default("emerald") @map("theme_accent")
+  fontSize    Int      @default(100) @map("font_size")
+  sidebarCollapsed Boolean @default(false) @map("sidebar_collapsed")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("user_preferences")
+}
+
+model RescheduleRequest {
+  id              String    @id @default(cuid())
+  appointmentId   String    @map("appointment_id")
+  patientId       String    @map("patient_id")
+  preferredDate1  String?   @map("preferred_date_1")
+  preferredDate2  String?   @map("preferred_date_2")
+  preferredDate3  String?   @map("preferred_date_3")
+  timePreference  String?   @map("time_preference") // "earliest", "morning", "afternoon", "anytime"
+  selectedSlot    String?   @map("selected_slot")
+  status          String    @default("pending") // pending, confirmed, declined
+  reason          String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  processedAt     DateTime? @map("processed_at")
+  processedBy     String?   @map("processed_by")
+
+  @@map("reschedule_requests")
+}
+
+// ─── Pre-Visit Briefs ──────────────────────────────────────
+model PreVisitBrief {
+  id                String         @id @default(cuid())
+  status            BriefStatus    @default(PENDING)
+  chiefComplaint    String?        @map("chief_complaint")
+  hpiNarrative      String?        @map("hpi_narrative")
+  reviewOfSystems   Json?          @map("review_of_systems")
+  medicationChanges Json?          @map("medication_changes")
+  allergyUpdates    Json?          @map("allergy_updates")
+  vitalSigns        Json?          @map("vital_signs")
+  differentials     Json?
+  redFlags          Json?          @map("red_flags")
+  recommendations   Json?
+  soapNote          Json?          @map("soap_note")
+  transcript        String?        @db.Text
+  fhirBundle        Json?          @map("fhir_bundle")
+  clinicalSummary   String?        @map("clinical_summary")
+  riskScore         Float?         @map("risk_score")
+  protocolsApplied  String[]       @map("protocols_applied")
+  ehrSyncStatus     String         @default("PENDING") @map("ehr_sync_status")
+  ehrSyncedAt       DateTime?      @map("ehr_synced_at")
+  generatedAt       DateTime?      @map("generated_at")
+  reviewedBy        String?        @map("reviewed_by")
+  reviewedAt        DateTime?      @map("reviewed_at")
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+
+  appointment       Appointment    @relation(fields: [appointmentId], references: [id])
+  appointmentId     String         @unique @map("appointment_id")
+  patient           Patient        @relation(fields: [patientId], references: [id])
+  patientId         String         @map("patient_id")
+  provider          User           @relation(fields: [providerId], references: [id])
+  providerId        String         @map("provider_id")
+
+  @@map("pre_visit_briefs")
+}
+
+// ─── Pre-Visit Workflow Engine ──────────────────────────────
+model PreVisitWorkflow {
+  id                String   @id @default(cuid())
+  stage             String   @default("SCHEDULED") // SCHEDULED, EHR_SYNC, ENGAGING, COLLECTING, SYNTHESIZING, READY, DELIVERED, REVIEWED
+  triggerMode       String   @default("auto") @map("trigger_mode") // auto, manual
+  scheduledCallAt   DateTime? @map("scheduled_call_at")
+  callAttempts      Int      @default(0) @map("call_attempts")
+  maxCallAttempts   Int      @default(3) @map("max_call_attempts")
+  retryIntervalMin  Int      @default(60) @map("retry_interval_min")
+  nextRetryAt       DateTime? @map("next_retry_at")
+  voicemailLeft     Boolean  @default(false) @map("voicemail_left")
+  smsLinkSent       Boolean  @default(false) @map("sms_link_sent")
+  smsFallbackUrl    String?  @map("sms_fallback_url")
+  engagementMethod  String?  @map("engagement_method") // voice_outbound, voice_inbound, sms_link
+  completionRate    Float?   @map("completion_rate")
+  ehrSyncCompleted  Boolean  @default(false) @map("ehr_sync_completed")
+  ehrSyncedAt       DateTime? @map("ehr_synced_at")
+  soapGenerated     Boolean  @default(false) @map("soap_generated")
+  soapGeneratedAt   DateTime? @map("soap_generated_at")
+  briefDeliveredAt  DateTime? @map("brief_delivered_at")
+  ehrDeliveredAt    DateTime? @map("ehr_delivered_at")
+  failureReason     String?  @map("failure_reason")
+  clinicalContext   Json?    @map("clinical_context") // aggregated EHR + intake data
+  intakeData        Json?    @map("intake_data")      // raw patient-reported data
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  appointment       Appointment @relation(fields: [appointmentId], references: [id])
+  appointmentId     String      @unique @map("appointment_id")
+  patient           Patient     @relation(fields: [patientId], references: [id])
+  patientId         String      @map("patient_id")
+  voiceCallId       String?     @map("voice_call_id")
+
+  @@index([stage])
+  @@index([scheduledCallAt])
+  @@map("pre_visit_workflows")
+}
+
+// ─── EHR Connection Configuration ──────────────────────────
+model EHRConnection {
+  id          String   @id @default(cuid())
+  name        String   // "Epic - Northville Clinic"
+  adapter     String   // epic_fhir, athena, opendental, bluai, mock
+  baseUrl     String   @map("base_url")
+  credentials Json     @default("{}") // encrypted API keys, client IDs
+  isActive    Boolean  @default(true) @map("is_active")
+  lastSyncAt  DateTime? @map("last_sync_at")
+  syncStatus  String   @default("IDLE") @map("sync_status") // IDLE, SYNCING, SUCCESS, FAILED
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  clinic      Clinic   @relation(fields: [clinicId], references: [id])
+  clinicId    String   @map("clinic_id")
+
+  @@map("ehr_connections")
+}
+
+enum BriefStatus {
+  PENDING
+  CALL_SCHEDULED
+  CALL_IN_PROGRESS
+  DATA_COLLECTED
+  ANALYZING
+  READY
+  DELIVERED
+  REVIEWED
+  EXPIRED
+}
+
+// ─── Voice Calls ────────────────────────────────────────────
+model VoiceCall {
+  id              String       @id @default(cuid())
+  direction       CallDirection @default(OUTBOUND)
+  callType        CallType     @default(PRE_VISIT)  @map("call_type")
+  status          CallStatus   @default(QUEUED)
+  phoneNumber     String       @map("phone_number")
+  startedAt       DateTime?    @map("started_at")
+  endedAt         DateTime?    @map("ended_at")
+  durationSeconds Int?         @map("duration_seconds")
+  attempts        Int          @default(0)
+  maxAttempts     Int          @default(3) @map("max_attempts")
+  transcript      String?
+  sentiment       String?
+  completionRate  Float?       @map("completion_rate")
+  dataCollected   Json?        @map("data_collected")
+  voicemailLeft   Boolean      @default(false) @map("voicemail_left")
+  callbackNumber  String?      @map("callback_number")
+  agentId         String?      @map("agent_id")
+  errorMessage    String?      @map("error_message")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  // Retell AI integration fields
+  retellCallId    String?      @unique @map("retell_call_id")
+  retellAgentId   String?      @map("retell_agent_id")
+  recordingUrl    String?      @map("recording_url")
+  callAnalysis    Json?        @map("call_analysis")
+  redFlags        Json?        @map("red_flags")
+  soapGenerated   Boolean      @default(false) @map("soap_generated")
+
+  patient         Patient      @relation(fields: [patientId], references: [id])
+  patientId       String       @map("patient_id")
+  appointment     Appointment? @relation(fields: [appointmentId], references: [id])
+  appointmentId   String?      @unique @map("appointment_id")
+  provider        User?        @relation(fields: [providerId], references: [id])
+  providerId      String?      @map("provider_id")
+
+  @@map("voice_calls")
+}
+
+enum CallDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum CallType {
+  PRE_VISIT
+  SCHEDULING
+  INSURANCE_VERIFY
+  FOLLOW_UP
+  GENERAL_INQUIRY
+  AFTER_HOURS
+}
+
+enum CallStatus {
+  QUEUED
+  RINGING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  NO_ANSWER
+  VOICEMAIL
+  CALLBACK_REQUESTED
+}
+
+// ─── Audit Log ──────────────────────────────────────────────
+model AuditLog {
+  id          String   @id @default(cuid())
+  action      String
+  category    String   @default("system")
+  entityType  String   @map("entity_type")
+  entityId    String   @map("entity_id")
+  userId      String?  @map("user_id")
+  userEmail   String?  @map("user_email")
+  details     Json?
+  ipAddress   String?  @map("ip_address")
+  userAgent   String?  @map("user_agent")
+  method      String?
+  path        String?
+  severity    String   @default("info") // info, warning, critical
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([action])
+  @@index([category])
+  @@index([createdAt])
+  @@index([severity])
+  @@map("audit_logs")
+}
+
+// ─── Clinical Protocols ─────────────────────────────────────
+model ClinicalProtocol {
+  id          String   @id @default(cuid())
+  name        String
+  category    String
+  description String?
+  criteria    Json?
+  actions     Json?
+  isActive    Boolean  @default(true) @map("is_active")
+  version     String   @default("1.0")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("clinical_protocols")
+}
+
+// ─── Voice Pipeline Configuration ───────────────────────────
+model VoicePipelineConfig {
+  id          String   @id @default(cuid())
+  clinicId    String?  @map("clinic_id")
+  layer       String   // voice_ai, telephony, stt, tts, llm
+  provider    String   // retell, telnyx, deepgram, etc.
+  config      Json     @default("{}")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  clinic      Clinic?  @relation(fields: [clinicId], references: [id])
+
+  @@unique([clinicId, layer])
+  @@index([layer])
+  @@map("voice_pipeline_configs")
+}
+
+// ─── AI Agents (Workflow Engine) ────────────────────────────
+model AIAgent {
+  id            String   @id @default(cuid())
+  name          String
+  description   String?
+  type          String   @default("custom") // pre_visit, follow_up, lab_review, appointment_reminder, custom
+  status        String   @default("draft") // draft, active, paused, archived
+  version       Int      @default(1)
+  trigger       Json     // { type: "schedule"|"manual"|"event", config: {...} }
+  steps         Json     @default("[]") // [{ id, name, type, config, order }]
+  settings      Json?    // { retryAttempts, retryInterval, smsFallback, ... }
+  createdBy     String?  @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  assignments   AIAgentAssignment[]
+
+  @@map("ai_agents")
+}
+
+model AIAgentAssignment {
+  id         String   @id @default(cuid())
+  scope      String   @default("all") // all, hospital, clinic
+  agentId    String   @map("agent_id")
+  hospitalId String?  @map("hospital_id")
+  clinicId   String?  @map("clinic_id")
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  agent      AIAgent   @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  hospital   Hospital? @relation(fields: [hospitalId], references: [id])
+  clinic     Clinic?   @relation(fields: [clinicId], references: [id])
+
+  @@unique([agentId, hospitalId, clinicId])
+  @@map("ai_agent_assignments")
+}
+
+// ─── Invitations ──────────────────────────────────────────
+model Invitation {
+  id          String    @id @default(cuid())
+  email       String
+  token       String    @unique
+  role        UserRole  @default(PROVIDER)
+  clinicId    String?   @map("clinic_id")
+  invitedBy   String    @map("invited_by")
+  expiresAt   DateTime  @map("expires_at")
+  usedAt      DateTime? @map("used_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  clinic      Clinic?   @relation(fields: [clinicId], references: [id])
+
+  @@map("invitations")
+}
+
+model MessageLink {
+  id            String   @id @default(cuid())
+  token         String   @unique
+  patientId     String   @map("patient_id")
+  appointmentId String?  @map("appointment_id")
+  serviceType   String   @map("service_type") // pre_visit_intake, referral_coordinator, etc.
+  channel       String   @default("sms") // sms, whatsapp, imessage
+  phone         String?
+  status        String   @default("sent") // sent, opened, completed, expired
+  sentAt        DateTime @default(now()) @map("sent_at")
+  openedAt      DateTime? @map("opened_at")
+  completedAt   DateTime? @map("completed_at")
+  expiresAt     DateTime @map("expires_at")
+  sentBy        String?  @map("sent_by") // userId or "system" for auto
+  metadata      Json?
+
+  patient       Patient  @relation(fields: [patientId], references: [id])
+
+  @@map("message_links")
+}
+
+model InboundCall {
+  id            String   @id @default(cuid())
+  callerPhone   String   @map("caller_phone")
+  clinicPhone   String?  @map("clinic_phone")
+  patientId     String?  @map("patient_id")
+  patientName   String?  @map("patient_name")
+  intent        String?  // detected service type or "custom"
+  customMessage String?  @db.Text @map("custom_message")
+  status        String   @default("received") // received, identified, link_sent, completed
+  linkToken     String?  @map("link_token")
+  channel       String   @default("sms")
+  callDuration  Int?     @map("call_duration")
+  receivedAt    DateTime @default(now()) @map("received_at")
+  processedAt   DateTime? @map("processed_at")
+  metadata      Json?
+
+  @@map("inbound_calls")
+}
