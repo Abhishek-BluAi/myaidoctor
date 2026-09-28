@@ -5,15 +5,17 @@ services:
       dockerfile: Dockerfile
     env_file: .env
     networks:
-      - global
+      - global-network
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.myaidoctor.rule=Host(`myaidoc.bluai.ai`)"
       - "traefik.http.routers.myaidoctor.entrypoints=websecure"
       - "traefik.http.services.myaidoctor.loadbalancer.server.port=3000"
       - "traefik.http.routers.myaidoctor.tls.certresolver=letsencrypt"
+      - "traefik.docker.network=global-network"
 
 
 networks:
   global:
+    name: global-network
     external: true
