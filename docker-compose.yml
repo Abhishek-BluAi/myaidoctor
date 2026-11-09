@@ -9,6 +9,14 @@ services:
     environment:
       - DATABASE_URL=postgresql://myaidoctor:myaidoctor_pass@db:5432/myaidoctor_db?schema=public
       - NODE_OPTIONS=--dns-result-order=ipv4first
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=global-network"
+      - "traefik.http.routers.myaidoctor.rule=Host(`myaidoc.ai`, `myaidoc.io`, `myaidoctor.io`, `myaidoc.bluai.ai`)"
+      - "traefik.http.routers.myaidoctor.entrypoints=websecure"
+      - "traefik.http.routers.myaidoctor.tls=true"
+      - "traefik.http.routers.myaidoctor.tls.certresolver=cert-resolver"
+      - "traefik.http.services.myaidoctor.loadbalancer.server.port=3000"
     networks:
       - global-network
 
@@ -30,3 +38,4 @@ volumes:
 networks:
   global-network:
     name: global-network
+    external: true
