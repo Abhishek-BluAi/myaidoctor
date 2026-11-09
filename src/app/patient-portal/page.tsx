@@ -28,7 +28,7 @@ export default function PatientPortalHome() {
     return sortAsc ? da - db : db - da;
   });
 
-  const upcoming = appointments.filter((a: any) => new Date(a.scheduledAt) >= new Date());
+  const upcoming = appointments;
 
   // View completed brief modal
   if (viewingBrief) {
@@ -127,7 +127,7 @@ export default function PatientPortalHome() {
       {upcoming.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-300">Upcoming Appointments ({upcoming.length})</h2>
+            <h2 className="text-sm font-semibold text-slate-300">Appointments ({upcoming.length})</h2>
             <button onClick={() => setSortAsc(!sortAsc)} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium text-slate-400 hover:text-white hover:bg-midnight-800/60 border border-midnight-700/50 transition-all">
               {sortAsc ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
               {sortAsc ? "Soonest first" : "Latest first"}

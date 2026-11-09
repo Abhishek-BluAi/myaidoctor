@@ -7,7 +7,7 @@ import { buildFHIRBundle } from "@/lib/fhir/resources";
 import { audit } from "@/lib/audit";
 import type { ClinicalIntake } from "@/lib/clinical/engine";
 
-/** GET — get patient's upcoming appointments and pending intakes */
+/** GET — get the patient's appointments and pending intakes */
 export async function GET(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
   if (!token?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -34,7 +34,6 @@ export async function GET(req: NextRequest) {
     },
   });
 
-  const upcoming = patient?.appointments.filter((a: any) => new Date(a.scheduledAt) >= new Date()) || [];
   const completed = patient?.appointments.filter((a: any) => a.preVisitBrief?.status === "READY") || [];
 
   return NextResponse.json({
@@ -42,7 +41,7 @@ export async function GET(req: NextRequest) {
       id: patient.id,
       firstName: patient.firstName,
       lastName: patient.lastName,
-      appointments: upcoming,
+      appointments: patient?.appointments || [],
       completedIntakes: completed,
     } : null,
     user: { firstName: user?.firstName, lastName: user?.lastName },
