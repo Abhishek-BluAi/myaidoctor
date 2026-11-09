@@ -4,11 +4,6 @@ services:
       context: .
       dockerfile: Dockerfile
     env_file: .env
-    depends_on:
-      - db
-    environment:
-      - DATABASE_URL=postgresql://myaidoctor:myaidoctor_pass@db:5432/myaidoctor_db?schema=public
-      - NODE_OPTIONS=--dns-result-order=ipv4first
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=global-network"
@@ -20,22 +15,6 @@ services:
       - "traefik.http.services.myaidoctor.loadbalancer.server.port=3000"
     networks:
       - global-network
-
-  db:
-    image: postgres:15-alpine
-    environment:
-      POSTGRES_USER: myaidoctor
-      POSTGRES_PASSWORD: myaidoctor_pass
-      POSTGRES_DB: myaidoctor_db
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-    networks:
-      - global-network
-
-volumes:
-  postgres_data:
-
 networks:
   global-network:
     name: global-network
