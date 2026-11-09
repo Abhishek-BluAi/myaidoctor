@@ -20,7 +20,7 @@ function IntakeChat() {
   const searchParams = useSearchParams();
   const appointmentId = searchParams.get("appointmentId") || "";
 
-  const [mode, setMode] = useState<"choose" | "chat" | "callSuccess" | "complete">("choose");
+  const [mode, setMode] = useState<"choose" | "chat" | "callForm" | "callLoading" | "callSuccess" | "callError" | "complete">("choose");
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -41,6 +41,9 @@ function IntakeChat() {
   const [showTtsSettings, setShowTtsSettings] = useState(false);
   const [language, setLanguage] = useState("en");
   const [showLangPicker, setShowLangPicker] = useState(false);
+  const [callPhone, setCallPhone] = useState("");
+  const [callError, setCallError] = useState("");
+  const [callResult, setCallResult] = useState<any>(null);
 
   const LANGUAGES = [
     { code: "en", label: "English", flag: "🇺🇸", srLang: "en-US", ttsLang: "en-US" },
@@ -273,6 +276,37 @@ function IntakeChat() {
     setLoading(false);
   }
 
+  async function requestCall() {
+    const phoneNumber = callPhone.trim();
+    if (!phoneNumber) {
+      setCallError("Enter the phone number where you want to receive the call.");
+      return;
+    }
+
+    setCallError("");
+    setCallResult(null);
+    setMode("callLoading");
+
+    try {
+      const res = await fetch("/api/voice-call", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "call", appointmentId: appointmentId || null, phoneNumber }),
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || data.details || "We could not start the call. Please try again.");
+      }
+
+      setCallResult(data);
+      setMode("callSuccess");
+    } catch (error: any) {
+      setCallError(error.message || "We could not start the call. Please try again.");
+      setMode("callError");
+    }
+  }
+
   function toggleVoice() { if (listening) { recognitionRef.current?.stop(); setListening(false); } else { setInput(""); recognitionRef.current?.start(); setListening(true); } }
 
   function shouldShowAvatar(i: number) { return i === 0 || messages[i - 1]?.role !== "bot"; }
@@ -305,19 +339,45 @@ function IntakeChat() {
           <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-brand-500 to-teal-600 ring-2 ring-brand-500/20 flex items-center justify-center shadow-lg"><MessageCircle className="w-5 h-5 text-white drop-shadow-sm" /></div>
           <div><p className="font-medium text-white text-sm">Chat</p><p className="text-[11px] text-slate-400">Type or speak with AI assistant</p></div>
         </button>
-        <button onClick={async () => {
-          setLoading(true);
-          try {
-            const res = await fetch("/api/voice-call", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "request", appointmentId }) });
-            const data = await res.json();
-            if (data.success) setMode("callSuccess");
-          } catch (error) { console.error("Call request error:", error); }
-          setLoading(false);
-        }} disabled={loading} className="w-full card-hover p-4 flex items-center gap-4 text-left disabled:opacity-60">
+        <button onClick={() => { setCallError(""); setMode("callForm"); }} className="w-full card-hover p-4 flex items-center gap-4 text-left">
           <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 ring-2 ring-blue-500/20 flex items-center justify-center shadow-lg"><Phone className="w-5 h-5 text-white drop-shadow-sm" /></div>
           <div className="flex-1"><p className="font-medium text-white text-sm">Phone Call</p><p className="text-[11px] text-slate-400">Get an AI pre-visit call now</p></div>
         </button>
         <a href="/patient-portal" className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300 justify-center pt-2"><ArrowLeft className="w-3 h-3" />Back</a>
+      </div>
+    );
+  }
+
+  if (mode === "callForm") {
+    return (
+      <div className="max-w-sm w-full mx-auto space-y-5 py-10">
+        <div className="text-center space-y-3">
+          <div className="w-20 h-20 rounded-full bg-blue-500/15 ring-8 ring-blue-500/10 flex items-center justify-center mx-auto">
+            <Phone className="w-10 h-10 text-blue-400" />
+          </div>
+          <h1 className="text-xl font-display font-bold text-white">Where should we call?</h1>
+          <p className="text-sm leading-6 text-slate-400">Enter the number where you want to receive your private AI pre-visit call.</p>
+        </div>
+        <form onSubmit={e => { e.preventDefault(); requestCall(); }} className="card p-4 space-y-3">
+          <label htmlFor="call-phone" className="text-xs font-medium text-slate-400">Phone number</label>
+          <input id="call-phone" type="tel" inputMode="tel" autoComplete="tel" autoFocus value={callPhone} onChange={e => setCallPhone(e.target.value)} placeholder="(248) 555-0123" className="input-field" />
+          {callError && <p className="flex items-start gap-2 text-xs text-red-300"><AlertCircle className="w-4 h-4 shrink-0" />{callError}</p>}
+          <button type="submit" disabled={!callPhone.trim()} className="btn-primary w-full justify-center disabled:opacity-50"><Phone className="w-4 h-4" />Call me</button>
+        </form>
+        <button onClick={() => setMode("choose")} className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300 justify-center w-full"><ArrowLeft className="w-3 h-3" />Back</button>
+      </div>
+    );
+  }
+
+  if (mode === "callLoading") {
+    return (
+      <div className="max-w-sm w-full mx-auto space-y-5 py-14 text-center">
+        <div className="relative w-24 h-24 mx-auto flex items-center justify-center">
+          <div className="absolute inset-0 rounded-full border-2 border-blue-400/30 animate-ping" />
+          <div className="w-16 h-16 rounded-full bg-blue-500/15 ring-8 ring-blue-500/10 flex items-center justify-center"><Phone className="w-8 h-8 text-blue-400 animate-pulse" /></div>
+        </div>
+        <div className="space-y-2"><h1 className="text-xl font-display font-bold text-white">Starting your call</h1><p className="text-sm leading-6 text-slate-400">We are securely preparing your appointment and previous visit details. Please wait.</p></div>
+        <div className="flex items-center justify-center gap-2 text-xs text-blue-300"><Loader2 className="w-4 h-4 animate-spin" />Connecting to the AI assistant</div>
       </div>
     );
   }
@@ -330,14 +390,25 @@ function IntakeChat() {
           <CheckCircle2 className="w-12 h-12 text-brand-400" />
         </div>
         <div className="space-y-2">
-          <h1 className="text-xl font-display font-bold text-white">Call request received</h1>
-          <p className="text-sm leading-6 text-slate-400">Your request was saved and the AI assistant is calling the phone number on file.</p>
+          <h1 className="text-xl font-display font-bold text-white">Your call is on the way</h1>
+          <p className="text-sm leading-6 text-slate-400">The AI assistant is calling {callPhone}. Keep your phone nearby.</p>
         </div>
         <div className="card p-4 text-left space-y-2">
-          <div className="flex items-center gap-2 text-sm text-brand-300"><Check className="w-4 h-4" />Request saved securely</div>
-          <p className="text-xs text-slate-500">You can continue to your patient portal while you wait for a response.</p>
+          <div className="flex items-center gap-2 text-sm text-brand-300"><Check className="w-4 h-4" />Patient and appointment context prepared</div>
+          <div className="flex items-center gap-2 text-sm text-brand-300"><Check className="w-4 h-4" />Call request sent to {callResult?.provider || "Vapi.ai"}</div>
+          <p className="text-xs text-slate-500">Call ID: {callResult?.callId || "pending"}</p>
         </div>
         <a href="/patient-portal" className="btn-primary inline-flex justify-center w-full">Back to Patient Portal</a>
+      </div>
+    );
+  }
+
+  if (mode === "callError") {
+    return (
+      <div className="max-w-sm w-full mx-auto space-y-5 py-10 text-center">
+        <div className="w-20 h-20 rounded-full bg-red-500/15 ring-8 ring-red-500/10 flex items-center justify-center mx-auto"><AlertCircle className="w-12 h-12 text-red-400" /></div>
+        <div className="space-y-2"><h1 className="text-xl font-display font-bold text-white">Call could not be started</h1><p className="text-sm leading-6 text-slate-400">{callError}</p></div>
+        <div className="space-y-2"><button onClick={() => setMode("callForm")} className="btn-primary inline-flex justify-center w-full">Try again</button><button onClick={() => setMode("choose")} className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300 justify-center w-full pt-2"><ArrowLeft className="w-3 h-3" />Back</button></div>
       </div>
     );
   }
