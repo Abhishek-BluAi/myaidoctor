@@ -45,6 +45,7 @@ model User {
   resetTokenExp DateTime?   @map("reset_token_exp")
 
   appointments   Appointment[]
+  callRequests    CallRequest[]
   preVisitBriefs PreVisitBrief[]
   voiceCalls     VoiceCall[]
   clinic         Clinic?    @relation(fields: [clinicId], references: [id])
@@ -176,6 +177,7 @@ model Patient {
   clinicId        String?   @map("clinic_id")
 
   appointments    Appointment[]
+  callRequests    CallRequest[]
   preVisitBriefs  PreVisitBrief[]
   voiceCalls      VoiceCall[]
   workflows       PreVisitWorkflow[]
@@ -208,6 +210,7 @@ model Appointment {
   preVisitBrief   PreVisitBrief?
   voiceCall       VoiceCall?
   workflow        PreVisitWorkflow?
+  callRequests    CallRequest[]
 
   @@map("appointments")
 }
@@ -234,6 +237,34 @@ enum AppointmentStatus {
   CANCELLED
   RESCHEDULED
   NO_SHOW
+}
+
+// ─── Patient Phone Call Requests ───────────────────────────
+model CallRequest {
+  id              String   @id @default(cuid())
+  userId          String   @map("user_id")
+  patientId       String   @map("patient_id")
+  appointmentId   String?  @map("appointment_id")
+  phoneNumber     String   @map("phone_number")
+  status          String   @default("REQUESTED") // REQUESTED, QUEUED, IN_PROGRESS, COMPLETED, FAILED, NO_ANSWER
+  provider        String?
+  externalCallId  String?  @map("external_call_id")
+  errorMessage    String?  @map("error_message")
+  requestedAt     DateTime @default(now()) @map("requested_at")
+  startedAt       DateTime? @map("started_at")
+  completedAt     DateTime? @map("completed_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user            User     @relation(fields: [userId], references: [id])
+  patient         Patient  @relation(fields: [patientId], references: [id])
+  appointment     Appointment? @relation(fields: [appointmentId], references: [id])
+
+  @@index([userId])
+  @@index([patientId])
+  @@index([appointmentId])
+  @@index([status])
+  @@map("call_requests")
 }
 
 model CancellationWaitlist {

@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file: .env
+    networks:
+      - global-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.myaidoctor.rule=Host(`myaidoc.bluai.ai`)"
+      - "traefik.http.routers.myaidoctor.entrypoints=websecure"
+      - "traefik.http.services.myaidoctor.loadbalancer.server.port=3000"
+      - "traefik.http.routers.myaidoctor.tls.certresolver=letsencrypt"
+      - "traefik.docker.network=global-network"
+
+networks:
+  global-network:
+    external: true

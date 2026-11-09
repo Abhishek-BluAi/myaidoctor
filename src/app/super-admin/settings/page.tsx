@@ -254,11 +254,13 @@ function SettingsContent() {
           {(settings.voice_provider || "vapi") === "vapi" && (
             <div className="card p-5 space-y-4">
               <div className="flex items-center gap-2 text-sm font-semibold text-white">Vapi.ai Configuration</div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="space-y-1.5"><label className="text-xs font-medium text-slate-400">Vapi API Key</label>
                 <input type="password" value={settings.voice_api_key || ""} onChange={e => update("voice_api_key", e.target.value)} placeholder="vapi_..." className="input-field" /></div>
                 <div className="space-y-1.5"><label className="text-xs font-medium text-slate-400">Phone Number ID</label>
                 <input value={settings.voice_phone_number || ""} onChange={e => update("voice_phone_number", e.target.value)} placeholder="Phone number ID from Vapi dashboard" className="input-field" /></div>
+                <div className="space-y-1.5"><label className="text-xs font-medium text-slate-400">Assistant ID (Optional)</label>
+                <input value={settings.voice_agent_id || ""} onChange={e => update("voice_agent_id", e.target.value)} placeholder="Assistant ID from Vapi" className="input-field" /></div>
               </div>
               <div className="p-3 rounded-lg bg-midnight-800/50 text-xs text-slate-400">
                 <strong className="text-slate-300">Setup:</strong> 1) Sign up at <span className="text-brand-400">vapi.ai</span> 2) Get API key from Settings 3) Buy a phone number ($1-2/mo) 4) Set webhook URL:<br/>

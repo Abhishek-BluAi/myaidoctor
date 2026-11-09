@@ -37,7 +37,8 @@ async function getVoiceConfig() {
       vapiKey: s.voice_api_key || process.env.VAPI_API_KEY || "",
       retellKey: s.voice_ai_retell_api_key || process.env.RETELL_API_KEY || "",
       retellAgentId: s.voice_ai_retell_agent_id || "",
-      phoneNumber: s.voice_phone_number || process.env.VOICE_PHONE_NUMBER || "",
+      phoneNumber: s.voice_phone_number || process.env.VAPI_PHONE_NUMBER_ID || process.env.VOICE_PHONE_NUMBER || "",
+      vapiAgentId: s.voice_agent_id || process.env.VAPI_AGENT_ID || "",
     };
   } catch {
     return {
@@ -45,8 +46,126 @@ async function getVoiceConfig() {
       vapiKey: process.env.VAPI_API_KEY || "",
       retellKey: process.env.RETELL_API_KEY || "",
       retellAgentId: "",
-      phoneNumber: process.env.VOICE_PHONE_NUMBER || "",
+      phoneNumber: process.env.VAPI_PHONE_NUMBER_ID || process.env.VOICE_PHONE_NUMBER || "",
+      vapiAgentId: process.env.VAPI_AGENT_ID || "",
     };
+  }
+}
+
+type OutboundCallInput = {
+  patient: any;
+  appointmentId: string | null;
+  phoneNumber: string;
+  callRequestId: string;
+};
+
+async function buildPatientVoiceContext(patient: any, appointmentId: string | null) {
+  const appointment = appointmentId
+    ? await prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      include: { provider: true, clinic: true },
+    })
+    : null;
+
+  if (appointment && appointment.patientId !== patient.id) {
+    throw new Error("Appointment does not belong to this patient");
+  }
+
+  const pastAppointments = await prisma.appointment.findMany({
+    where: {
+      patientId: patient.id,
+      ...(appointment ? { scheduledAt: { lt: appointment.scheduledAt } } : {}),
+    },
+    orderBy: { scheduledAt: "desc" },
+    take: 5,
+    include: { preVisitBrief: true },
+  });
+
+  const context = {
+    personalDetails: {
+      name: `${patient.firstName} ${patient.lastName}`,
+      dateOfBirth: patient.dateOfBirth,
+      gender: patient.gender,
+      preferredLanguage: patient.preferredLanguage,
+      phone: patient.phone,
+      email: patient.email,
+    },
+    medicalDetails: {
+      allergies: patient.allergies,
+      medications: patient.medications,
+      conditions: patient.conditions,
+      upcomingAppointment: appointment ? {
+        date: appointment.scheduledAt,
+        visitType: appointment.visitType,
+        reasonForVisit: appointment.reasonForVisit,
+        chiefComplaint: appointment.chiefComplaint,
+        provider: `${appointment.provider.firstName} ${appointment.provider.lastName}`,
+        clinic: appointment.clinic?.name,
+      } : null,
+    },
+    previousRecords: pastAppointments.map((pastAppointment) => ({
+      date: pastAppointment.scheduledAt,
+      visitType: pastAppointment.visitType,
+      reasonForVisit: pastAppointment.reasonForVisit,
+      summary: pastAppointment.preVisitBrief?.clinicalSummary || "No clinical summary available",
+    })),
+  };
+
+  const systemPrompt = buildClaudeSystemPrompt({
+    phase: "consent",
+    phaseStep: 0,
+    data: {
+      patientDetails: context.personalDetails,
+      upcomingAppointment: context.medicalDetails.upcomingAppointment,
+      pastHistory: context.previousRecords,
+    },
+    consentGiven: false,
+    complete: false,
+  });
+
+  return {
+    context,
+    systemPrompt: `${systemPrompt}
+
+VOICE CALL RULES:
+- This is a live phone conversation. Speak in short, natural sentences and ask one question at a time.
+- Begin by confirming you are speaking with the patient, then explain that this is a pre-visit intake and obtain consent before discussing or collecting medical information.
+- Use the patient context below to personalize the conversation, but never read the full record aloud unless the patient asks.
+- Treat the previous records as background only. Never invent, diagnose, prescribe, or change medication instructions.
+- If the patient reports chest pain, severe trouble breathing, stroke symptoms, severe bleeding, loss of consciousness, or immediate danger, tell them to hang up and call 911 now. Do not continue the intake.
+- For urgent but non-emergency concerns, advise the patient to contact the clinic and clearly mark the concern for the provider.
+- Repeat important names, dates, medication names, and numbers for confirmation. Say when you are unsure.
+- End by briefly summarizing what was collected, asking whether anything is missing, and explaining that the provider will review it.
+
+PATIENT CONTEXT (private; use only for this call):
+${JSON.stringify(context, null, 2)}`,
+  };
+}
+
+async function startOutboundCall({ patient, appointmentId, phoneNumber, callRequestId }: OutboundCallInput) {
+  const config = await getVoiceConfig();
+
+  try {
+    const { context, systemPrompt } = await buildPatientVoiceContext(patient, appointmentId);
+    await prisma.callRequest.update({
+      where: { id: callRequestId },
+      data: { phoneNumber, provider: config.provider, status: "QUEUED", errorMessage: null },
+    });
+
+    if (config.provider === "vapi" && config.vapiKey) {
+      return triggerVapiCall(config, phoneNumber, appointmentId, systemPrompt, callRequestId, context);
+    }
+    if (config.provider === "retell" && config.retellKey) {
+      return triggerRetellCall(config, phoneNumber, appointmentId, callRequestId);
+    }
+
+    throw new Error("No voice provider configured. Set VAPI_API_KEY and VAPI_PHONE_NUMBER_ID.");
+  } catch (error: any) {
+    await prisma.callRequest.update({
+      where: { id: callRequestId },
+      data: { status: "FAILED", errorMessage: error.message },
+    }).catch(() => { });
+    return NextResponse.json({ error: error.message }, { status: 400 });
   }
 }
 
@@ -54,32 +173,60 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const { action } = body;
 
+  if (action === "request") {
+    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+    if (!token?.id || !token.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const patient = await prisma.patient.findFirst({ where: { email: token.email as string } });
+    if (!patient) return NextResponse.json({ error: "Patient record not found" }, { status: 404 });
+
+    const { appointmentId } = body;
+    if (appointmentId) {
+      const appointment = await prisma.appointment.findUnique({ where: { id: appointmentId } });
+      if (!appointment) return NextResponse.json({ error: "Appointment not found" }, { status: 404 });
+      if (appointment.patientId !== patient.id) return NextResponse.json({ error: "Appointment does not belong to this patient" }, { status: 403 });
+    }
+
+    const callRequest = await prisma.callRequest.create({
+      data: {
+        userId: token.id as string,
+        patientId: patient.id,
+        appointmentId: appointmentId || null,
+        phoneNumber: patient.phone,
+        status: "QUEUED",
+      },
+    });
+    return startOutboundCall({
+      patient,
+      appointmentId: appointmentId || null,
+      phoneNumber: patient.phone,
+      callRequestId: callRequest.id,
+    });
+  }
+
   // ── Trigger outbound call ──────────────────────────────
   if (action === "call") {
     const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
-    if (!token?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!token?.id || !token.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { appointmentId, phoneNumber } = body;
-    if (!appointmentId || !phoneNumber) return NextResponse.json({ error: "appointmentId and phoneNumber required" }, { status: 400 });
+    if (!phoneNumber) return NextResponse.json({ error: "phoneNumber required" }, { status: 400 });
 
-    const config = await getVoiceConfig();
+    const patient = await prisma.patient.findFirst({ where: { email: token.email as string } });
+    if (!patient) return NextResponse.json({ error: "Patient record not found" }, { status: 404 });
 
-    // Build the clinical system prompt
-    const systemPrompt = buildClaudeSystemPrompt({ phase: "consent", phaseStep: 0, data: {}, consentGiven: false, complete: false });
-
-    if (config.provider === "vapi" && config.vapiKey) {
-      return triggerVapiCall(config, phoneNumber, appointmentId, systemPrompt);
-    } else if (config.provider === "retell" && config.retellKey) {
-      return triggerRetellCall(config, phoneNumber, appointmentId);
-    } else {
-      return NextResponse.json({
-        error: "No voice provider configured",
-        setup: {
-          vapi: { url: "https://vapi.ai", steps: ["Sign up at vapi.ai", "Get API key from dashboard", "Add phone number ($1-2/mo)", "Set API key in Super Admin → Settings → Voice AI"] },
-          retell: { url: "https://retellai.com", steps: ["Sign up at retellai.com", "Create an agent", "Get API key", "Set in Super Admin → Settings → Voice AI"] },
-        }
-      }, { status: 400 });
-    }
+    const callRequest = body.callRequestId
+      ? await prisma.callRequest.updateMany({
+        where: { id: body.callRequestId, userId: token.id as string, patientId: patient.id },
+        data: { phoneNumber, status: "QUEUED", errorMessage: null },
+      }).then(async result => {
+        if (result.count === 0) throw new Error("Call request not found");
+        return prisma.callRequest.findUniqueOrThrow({ where: { id: body.callRequestId } });
+      })
+      : await prisma.callRequest.create({
+        data: { userId: token.id as string, patientId: patient.id, appointmentId: appointmentId || null, phoneNumber, status: "QUEUED" },
+      });
+    return startOutboundCall({ patient, appointmentId: appointmentId || null, phoneNumber, callRequestId: callRequest.id });
   }
 
   // ── Check voice service status ─────────────────────────
@@ -94,6 +241,12 @@ export async function POST(req: NextRequest) {
       phoneNumber: config.phoneNumber || "Not configured",
       costPerMin: hasVapi ? "$0.05" : hasRetell ? "$0.07-0.10" : "N/A",
     });
+  }
+
+
+  // ── Vapi.ai inbound call (assistant-request) ─────────────
+  if (body.message?.type === "assistant-request") {
+    return handleVapiAssistantRequest(body);
   }
 
   // ── Vapi.ai webhook (call completed) ───────────────────
@@ -111,45 +264,74 @@ export async function POST(req: NextRequest) {
 
 // ── Vapi.ai ──────────────────────────────────────────────
 
-async function triggerVapiCall(config: any, phone: string, appointmentId: string, systemPrompt: string) {
+async function triggerVapiCall(config: any, phone: string, appointmentId: string | null, systemPrompt: string, callRequestId: string, patientContext: Record<string, any>) {
   try {
+    const payload: any = {
+      phoneNumberId: config.phoneNumber,
+      customer: { number: phone },
+      metadata: { appointmentId: appointmentId || "", callRequestId },
+    };
+
+    if (config.vapiAgentId) {
+      payload.assistantId = config.vapiAgentId;
+      payload.assistantOverrides = {
+        variableValues: {
+          patientContext: JSON.stringify(patientContext),
+        },
+      };
+    } else {
+      payload.assistant = {
+        model: {
+          provider: "anthropic",
+          model: "claude-3-5-sonnet-20241022",
+          messages: [{ role: "system", content: systemPrompt }]
+        },
+        voice: { provider: "11labs", voiceId: "21m00Tcm4TlvDq8ikWAM" },
+        firstMessage: appointmentId
+          ? "Hi there! I'm your MyAIDoctor pre-visit assistant. I'm calling to help prepare for your upcoming appointment. This should take about 8 to 12 minutes. Before we begin, I need to let you know that your responses will be shared with your healthcare provider and stored securely. Do you understand and agree to proceed?"
+          : "Hi there! I am the MyAIDoctor assistant. How can I help you today?",
+        endCallMessage: appointmentId
+          ? "Thank you for completing your pre-visit intake! Your provider will review everything before your appointment. Take care!"
+          : "Thank you for calling. Take care!",
+        recordingEnabled: true,
+        transcriptionEnabled: true,
+      };
+    }
+
     const res = await fetch("https://api.vapi.ai/call/phone", {
       method: "POST",
       headers: { Authorization: `Bearer ${config.vapiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        phoneNumberId: config.phoneNumber,
-        customer: { number: phone },
-        assistant: {
-          model: { provider: "anthropic", model: "claude-3-5-sonnet-20241022", systemPrompt },
-          voice: { provider: "11labs", voiceId: "21m00Tcm4TlvDq8ikWAM" },
-          firstMessage: "Hi there! I'm your MyAIDoctor pre-visit assistant. I'm calling to help prepare for your upcoming appointment. This should take about 8 to 12 minutes. Before we begin, I need to let you know that your responses will be shared with your healthcare provider and stored securely. Do you understand and agree to proceed?",
-          endCallMessage: "Thank you for completing your pre-visit intake! Your provider will review everything before your appointment. Take care!",
-          recordingEnabled: true,
-          transcriptionEnabled: true,
-        },
-        metadata: { appointmentId },
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!res.ok) {
       const err = await res.text().catch(() => "");
-      return NextResponse.json({ error: `Vapi error: ${res.status}`, details: err.slice(0, 200) }, { status: 500 });
+      console.error(`[VAPI ERROR] ${res.status}: ${err}`);
+      await prisma.callRequest.update({ where: { id: callRequestId }, data: { status: "FAILED", errorMessage: `Vapi error: ${res.status}` } });
+      return NextResponse.json({ error: `Vapi error: ${res.status}`, details: err.slice(0, 1000) }, { status: 500 });
     }
 
     const data = await res.json();
+    await prisma.callRequest.update({ where: { id: callRequestId }, data: { status: "RINGING", externalCallId: data.id, startedAt: new Date() } });
     return NextResponse.json({ success: true, callId: data.id, provider: "Vapi.ai", message: "Call initiated — patient will receive a call shortly" });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    console.error("[VAPI CATCH ERROR]", e, "CAUSE:", e.cause);
+    await prisma.callRequest.update({ where: { id: callRequestId }, data: { status: "FAILED", errorMessage: e.message } }).catch(() => { });
+    return NextResponse.json({ error: e.message, cause: e.cause ? String(e.cause) : undefined }, { status: 500 });
   }
 }
 
 async function handleVapiWebhook(body: any) {
   const report = body.message || body;
   const appointmentId = report.metadata?.appointmentId || report.call?.metadata?.appointmentId;
+  const callRequestId = report.metadata?.callRequestId || report.call?.metadata?.callRequestId;
   const transcript = report.transcript || report.artifact?.transcript || "";
 
   if (appointmentId && transcript) {
     await saveCallIntake(appointmentId, transcript, "vapi");
+  }
+  if (callRequestId) {
+    await prisma.callRequest.update({ where: { id: callRequestId }, data: { status: "COMPLETED", completedAt: new Date() } }).catch(() => { });
   }
 
   return NextResponse.json({ ok: true });
@@ -157,7 +339,7 @@ async function handleVapiWebhook(body: any) {
 
 // ── Retell AI ────────────────────────────────────────────
 
-async function triggerRetellCall(config: any, phone: string, appointmentId: string) {
+async function triggerRetellCall(config: any, phone: string, appointmentId: string | null, callRequestId: string) {
   try {
     const res = await fetch("https://api.retellai.com/v2/create-phone-call", {
       method: "POST",
@@ -165,28 +347,35 @@ async function triggerRetellCall(config: any, phone: string, appointmentId: stri
       body: JSON.stringify({
         agent_id: config.retellAgentId,
         to_number: phone,
-        metadata: { appointmentId },
+        metadata: { appointmentId, callRequestId },
       }),
     });
 
     if (!res.ok) {
       const err = await res.text().catch(() => "");
+      await prisma.callRequest.update({ where: { id: callRequestId }, data: { status: "FAILED", errorMessage: `Retell error: ${res.status}` } });
       return NextResponse.json({ error: `Retell error: ${res.status}`, details: err.slice(0, 200) }, { status: 500 });
     }
 
     const data = await res.json();
+    await prisma.callRequest.update({ where: { id: callRequestId }, data: { status: "RINGING", externalCallId: data.call_id, startedAt: new Date() } });
     return NextResponse.json({ success: true, callId: data.call_id, provider: "Retell AI", message: "Call initiated — patient will receive a call shortly" });
   } catch (e: any) {
+    await prisma.callRequest.update({ where: { id: callRequestId }, data: { status: "FAILED", errorMessage: e.message } }).catch(() => { });
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }
 
 async function handleRetellWebhook(body: any) {
   const appointmentId = body.metadata?.appointmentId || body.call?.metadata?.appointmentId;
+  const callRequestId = body.metadata?.callRequestId || body.call?.metadata?.callRequestId;
   const transcript = body.transcript || body.call?.transcript || "";
 
   if (appointmentId && transcript) {
     await saveCallIntake(appointmentId, transcript, "retell");
+  }
+  if (callRequestId) {
+    await prisma.callRequest.update({ where: { id: callRequestId }, data: { status: "COMPLETED", completedAt: new Date() } }).catch(() => { });
   }
 
   return NextResponse.json({ ok: true });
@@ -253,4 +442,55 @@ async function saveCallIntake(appointmentId: string, transcript: string, provide
 function extractFromTranscript(text: string, pattern: RegExp): string {
   const match = text.match(pattern);
   return match?.[1]?.trim().slice(0, 200) || "";
+}
+
+
+async function handleVapiAssistantRequest(body: any) {
+  try {
+    const customerNumber = body.message?.call?.customer?.number;
+    let systemPrompt = "";
+
+    if (customerNumber) {
+      // Find patient by phone
+      const patient = await prisma.patient.findFirst({
+        where: { phone: { contains: customerNumber.slice(-10) } }, // match last 10 digits
+        include: { clinic: true }
+      });
+
+      if (patient) {
+        // Find upcoming appointment
+        const appointment = await prisma.appointment.findFirst({
+          where: { patientId: patient.id, status: { in: ["SCHEDULED", "CONFIRMED"] } },
+          orderBy: { scheduledAt: 'asc' },
+          include: { provider: true }
+        });
+
+        const data = {
+          patientDetails: patient,
+          upcomingAppointment: appointment ? {
+            date: appointment.scheduledAt,
+            provider: appointment.provider ? `${appointment.provider.firstName} ${appointment.provider.lastName}` : 'Unknown Provider',
+            visitType: appointment.visitType,
+            clinic: patient.clinic?.name
+          } : null,
+          pastHistory: []
+        };
+
+        systemPrompt = buildClaudeSystemPrompt({ phase: "consent", phaseStep: 0, data, consentGiven: false, complete: false });
+      } else {
+        systemPrompt = "You are Riley from Wellness Partners. A new patient is calling. Ask for their name and how you can help them.";
+      }
+    }
+
+    return NextResponse.json({
+      assistant: {
+        variableValues: {
+          patientInfo: systemPrompt
+        }
+      }
+    });
+  } catch (e: any) {
+    console.error("[VAPI Assistant Request Error]", e);
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
 }

@@ -703,6 +703,18 @@ async function main() {
 
   console.log(`✅ Created ${appointments.length} appointments`);
 
+  await prisma.callRequest.create({
+    data: {
+      userId: patientUser.id,
+      patientId: patients[10].id,
+      appointmentId: appointments[14].id,
+      phoneNumber: patients[10].phone,
+      status: "REQUESTED",
+      provider: "vapi",
+    },
+  });
+  console.log("✅ Created 1 sample phone call request");
+
   // ─── Pre-Visit Briefs ──────────────────────────────────
   const briefData = [
     {

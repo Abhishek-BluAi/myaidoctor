@@ -20,7 +20,7 @@ function IntakeChat() {
   const searchParams = useSearchParams();
   const appointmentId = searchParams.get("appointmentId") || "";
 
-  const [mode, setMode] = useState<"choose" | "chat" | "call" | "calling" | "complete">("choose");
+  const [mode, setMode] = useState<"choose" | "chat" | "callSuccess" | "complete">("choose");
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -32,9 +32,6 @@ function IntakeChat() {
   const [listening, setListening] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [aiStatus, setAiStatus] = useState<{ active: boolean; provider: string; model?: string; message?: string } | null>(null);
-  const [voiceStatus, setVoiceStatus] = useState<any>(null);
-  const [callPhone, setCallPhone] = useState("");
-  const [callResult, setCallResult] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -138,8 +135,6 @@ function IntakeChat() {
   useEffect(() => {
     fetch("/api/patient/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "check_ai" }) })
       .then(r => r.json()).then(setAiStatus).catch(() => setAiStatus({ active: false, provider: "scripted" }));
-    fetch("/api/voice-call", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "status" }) })
-      .then(r => r.json()).then(setVoiceStatus).catch(() => {});
   }, []);
 
   async function startChat() {
@@ -255,7 +250,7 @@ function IntakeChat() {
         }, 1500);
       } else if (data.exited) {
         addBotMsg(data.reply);
-        fetch("/api/patient/intake", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "save_progress", appointmentId, intake: { partialMessages: messages.length } }) }).catch(() => {});
+        fetch("/api/patient/intake", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "save_progress", appointmentId, intake: { partialMessages: messages.length } }) }).catch(() => { });
         setTimeout(() => { window.location.href = "/patient-portal"; }, 3000);
       } else {
         // Add "← Back" to options if we have history to go back to
@@ -310,68 +305,39 @@ function IntakeChat() {
           <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-brand-500 to-teal-600 ring-2 ring-brand-500/20 flex items-center justify-center shadow-lg"><MessageCircle className="w-5 h-5 text-white drop-shadow-sm" /></div>
           <div><p className="font-medium text-white text-sm">Chat</p><p className="text-[11px] text-slate-400">Type or speak with AI assistant</p></div>
         </button>
-        <button onClick={() => setMode("call")} className="w-full card-hover p-4 flex items-center gap-4 text-left">
+        <button onClick={async () => {
+          setLoading(true);
+          try {
+            const res = await fetch("/api/voice-call", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "request", appointmentId }) });
+            const data = await res.json();
+            if (data.success) setMode("callSuccess");
+          } catch (error) { console.error("Call request error:", error); }
+          setLoading(false);
+        }} disabled={loading} className="w-full card-hover p-4 flex items-center gap-4 text-left disabled:opacity-60">
           <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 ring-2 ring-blue-500/20 flex items-center justify-center shadow-lg"><Phone className="w-5 h-5 text-white drop-shadow-sm" /></div>
-          <div className="flex-1"><p className="font-medium text-white text-sm">Phone Call</p><p className="text-[11px] text-slate-400">AI calls you at your number</p></div>
-          {voiceStatus?.configured && <span className="text-[10px] text-slate-500">{voiceStatus.costPerMin}/min</span>}
+          <div className="flex-1"><p className="font-medium text-white text-sm">Phone Call</p><p className="text-[11px] text-slate-400">Get an AI pre-visit call now</p></div>
         </button>
         <a href="/patient-portal" className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300 justify-center pt-2"><ArrowLeft className="w-3 h-3" />Back</a>
       </div>
     );
   }
 
-  // ── Call Mode — enter phone ───────────────────────
-  if (mode === "call") {
-    return (
-      <div className="max-w-sm w-full mx-auto space-y-5 py-10">
-        <div className="text-center space-y-2">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 ring-4 ring-blue-500/20 flex items-center justify-center mx-auto shadow-xl"><Phone className="w-7 h-7 text-white drop-shadow-sm" /></div>
-          <h2 className="text-lg font-display font-bold text-white">Receive a Call</h2>
-          <p className="text-xs text-slate-400">Our AI assistant will call and walk you through the pre-visit questions.</p>
-        </div>
-        {voiceStatus?.configured ? (
-          <div className="card p-5 space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-xs text-slate-400">Your phone number</label>
-              <input value={callPhone} onChange={e => setCallPhone(e.target.value)} placeholder="(248) 555-1234" className="input-field text-center text-lg" />
-            </div>
-            <p className="text-[10px] text-slate-500 text-center">Powered by {voiceStatus.provider} · {voiceStatus.costPerMin}/min · ~10 min call</p>
-            <button onClick={async () => {
-              if (!callPhone) return; setMode("calling"); setLoading(true);
-              const res = await fetch("/api/voice-call", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "call", appointmentId, phoneNumber: callPhone }) });
-              setCallResult(await res.json()); setLoading(false);
-            }} disabled={!callPhone} className="btn-primary w-full justify-center py-3 disabled:opacity-40"><Phone className="w-4 h-4" />Call Me Now</button>
-          </div>
-        ) : (
-          <div className="card p-5 space-y-3 text-center">
-            <p className="text-sm text-amber-300">Phone service not configured</p>
-            <p className="text-xs text-slate-400">Admin needs to configure a voice provider in Settings → Voice AI.</p>
-            <p className="text-[10px] text-slate-500">Recommended: Vapi.ai ($0.05/min) — cheapest option</p>
-          </div>
-        )}
-        <div className="flex gap-3 justify-center">
-          <button onClick={() => setMode("choose")} className="text-xs text-slate-500 hover:text-slate-300 flex items-center gap-1"><ArrowLeft className="w-3 h-3" />Back</button>
-          <button onClick={startChat} className="text-xs text-brand-400 hover:text-brand-300">Chat instead</button>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Calling — waiting for connection ──────────────
-  if (mode === "calling") {
+  // ── Call request confirmation ─────────────────────
+  if (mode === "callSuccess") {
     return (
       <div className="max-w-sm w-full mx-auto space-y-5 py-10 text-center">
-        {loading ? (
-          <><Loader2 className="w-12 h-12 animate-spin text-blue-400 mx-auto" /><h2 className="text-lg font-bold text-white">Placing your call...</h2><p className="text-sm text-slate-400">You should receive a call at {callPhone} shortly.</p></>
-        ) : callResult?.success ? (
-          <><Phone className="w-12 h-12 text-brand-400 mx-auto animate-pulse" /><h2 className="text-lg font-bold text-white">Call in Progress</h2><p className="text-sm text-slate-400">Answer your phone to begin the pre-visit intake.</p>
-          <div className="card p-4 text-xs text-slate-500 space-y-1"><p>Provider: {callResult.provider}</p></div>
-          <p className="text-[11px] text-slate-500">Your intake will be automatically saved when the call ends.</p><a href="/patient-portal" className="btn-primary inline-flex mt-4">Back to Portal</a></>
-        ) : (
-          <><AlertCircle className="w-12 h-12 text-red-400 mx-auto" /><h2 className="text-lg font-bold text-white">Could not place call</h2><p className="text-sm text-red-300">{callResult?.error}</p>
-          {callResult?.setup && <div className="card p-4 text-xs text-slate-400 text-left space-y-2"><p className="font-semibold text-white">Setup Guide:</p>{Object.entries(callResult.setup).map(([p, info]: [string, any]) => <div key={p}><p className="text-brand-300">{p}</p><ol className="list-decimal ml-4 space-y-0.5">{info.steps.map((s: string, i: number) => <li key={i}>{s}</li>)}</ol></div>)}</div>}
-          <button onClick={() => setMode("call")} className="btn-secondary inline-flex mt-2"><ArrowLeft className="w-4 h-4" />Try again</button></>
-        )}
+        <div className="call-success-pop w-20 h-20 rounded-full bg-brand-500/15 ring-8 ring-brand-500/10 flex items-center justify-center mx-auto">
+          <CheckCircle2 className="w-12 h-12 text-brand-400" />
+        </div>
+        <div className="space-y-2">
+          <h1 className="text-xl font-display font-bold text-white">Call request received</h1>
+          <p className="text-sm leading-6 text-slate-400">Your request was saved and the AI assistant is calling the phone number on file.</p>
+        </div>
+        <div className="card p-4 text-left space-y-2">
+          <div className="flex items-center gap-2 text-sm text-brand-300"><Check className="w-4 h-4" />Request saved securely</div>
+          <p className="text-xs text-slate-500">You can continue to your patient portal while you wait for a response.</p>
+        </div>
+        <a href="/patient-portal" className="btn-primary inline-flex justify-center w-full">Back to Patient Portal</a>
       </div>
     );
   }
@@ -471,7 +437,7 @@ function IntakeChat() {
         {/* AI Status — green dot, hover for details */}
         {aiStatus && (
           <div className="relative group">
-            <div className={`w-3 h-3 rounded-full cursor-help ${aiStatus.active ? "bg-brand-400 animate-pulse shadow-sm shadow-brand-400/50" : "bg-amber-400"}`} 
+            <div className={`w-3 h-3 rounded-full cursor-help ${aiStatus.active ? "bg-brand-400 animate-pulse shadow-sm shadow-brand-400/50" : "bg-amber-400"}`}
               title={aiStatus.active ? `AI: ${aiStatus.provider}` : "Scripted mode"} />
             <div className="absolute right-0 top-full mt-2 w-52 p-3 bg-midnight-900 border border-midnight-700 rounded-lg shadow-xl text-[10px] text-slate-400 hidden group-hover:block z-50 space-y-1">
               <p className="font-semibold text-white text-xs flex items-center gap-1.5">
@@ -504,11 +470,10 @@ function IntakeChat() {
 
               <div className={`max-w-[78%] ${isBot ? "" : "order-1"}`}>
                 {/* Bubble */}
-                <div className={`px-3 py-2 text-[14px] leading-relaxed whitespace-pre-wrap shadow-sm ${
-                  isBot
-                    ? "bg-midnight-800 text-slate-100 rounded-2xl rounded-bl-sm border border-midnight-700/40"
-                    : "bg-brand-600 text-white rounded-2xl rounded-br-sm"
-                }`} style={{ wordBreak: "break-word" }}>
+                <div className={`px-3 py-2 text-[14px] leading-relaxed whitespace-pre-wrap shadow-sm ${isBot
+                  ? "bg-midnight-800 text-slate-100 rounded-2xl rounded-bl-sm border border-midnight-700/40"
+                  : "bg-brand-600 text-white rounded-2xl rounded-br-sm"
+                  }`} style={{ wordBreak: "break-word" }}>
                   {msg.text}
                 </div>
 
@@ -534,12 +499,11 @@ function IntakeChat() {
                       const isAddMore = opt === "← Wait, add something";
                       return (
                         <button key={`${opt}-${oi}`} onClick={() => sendMessage(opt)}
-                          className={`px-3 py-1.5 rounded-full text-[12px] font-medium border active:scale-95 transition-all ${
-                            isBack ? "border-slate-600/40 text-slate-400 bg-slate-800/30 hover:bg-slate-700/40 hover:text-slate-200" :
+                          className={`px-3 py-1.5 rounded-full text-[12px] font-medium border active:scale-95 transition-all ${isBack ? "border-slate-600/40 text-slate-400 bg-slate-800/30 hover:bg-slate-700/40 hover:text-slate-200" :
                             isBye ? "border-emerald-600/60 text-emerald-300 bg-emerald-950/40 hover:bg-emerald-900/60" :
-                            isAddMore ? "border-amber-600/60 text-amber-300 bg-amber-950/40 hover:bg-amber-900/60" :
-                            "border-brand-600/60 text-brand-300 bg-brand-950/40 hover:bg-brand-900/60"
-                          }`}>
+                              isAddMore ? "border-amber-600/60 text-amber-300 bg-amber-950/40 hover:bg-amber-900/60" :
+                                "border-brand-600/60 text-brand-300 bg-brand-950/40 hover:bg-brand-900/60"
+                            }`}>
                           {opt}
                         </button>
                       );
