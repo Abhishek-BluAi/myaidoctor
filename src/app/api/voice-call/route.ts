@@ -71,6 +71,13 @@ async function buildPatientVoiceContext(patient: any, appointmentId: string | nu
     throw new Error("Appointment does not belong to this patient");
   }
 
+  const upcomingAppointments = await prisma.appointment.findMany({
+    where: { patientId: patient.id, scheduledAt: { gte: new Date() }, status: { not: "CANCELLED" } },
+    orderBy: { scheduledAt: "asc" },
+    take: 10,
+    include: { provider: true, clinic: true },
+  });
+
   const pastAppointments = await prisma.appointment.findMany({
     where: {
       patientId: patient.id,
@@ -102,6 +109,17 @@ async function buildPatientVoiceContext(patient: any, appointmentId: string | nu
         provider: `${appointment.provider.firstName} ${appointment.provider.lastName}`,
         clinic: appointment.clinic?.name,
       } : null,
+      upcomingAppointments: upcomingAppointments.map((upcoming) => ({
+        id: upcoming.id,
+        date: upcoming.scheduledAt,
+        durationMinutes: upcoming.duration,
+        status: upcoming.status,
+        visitType: upcoming.visitType,
+        reasonForVisit: upcoming.reasonForVisit,
+        chiefComplaint: upcoming.chiefComplaint,
+        provider: upcoming.provider ? `${upcoming.provider.firstName} ${upcoming.provider.lastName}` : "Provider not assigned",
+        clinic: upcoming.clinic?.name,
+      })),
     },
     previousRecords: pastAppointments.map((pastAppointment) => ({
       date: pastAppointment.scheduledAt,
@@ -130,6 +148,9 @@ async function buildPatientVoiceContext(patient: any, appointmentId: string | nu
 VOICE CALL RULES:
 - This is a live phone conversation. Speak in short, natural sentences and ask one question at a time.
 - Begin by confirming you are speaking with the patient, then explain that this is a pre-visit intake and obtain consent before discussing or collecting medical information.
+- You have access to the patient's upcomingAppointments and upcomingAppointment in the private context. Use those records to answer appointment questions accurately. If the patient asks for an appointment with a named provider, search the provided list by provider name and state the date, time, visit type, clinic, and status when found. Never say you cannot fetch appointment details when the details are present in the context.
+- When checking records or preparing an answer, tell the patient what you are doing in a brief progress phrase, such as "Let me check your upcoming appointments" or "I am reviewing that appointment now." Then answer as soon as the lookup is complete.
+- If no matching appointment exists in the provided context, say that no matching appointment was found and offer to help with scheduling. Do not invent an appointment.
 - Use the patient context below to personalize the conversation, but never read the full record aloud unless the patient asks.
 - Treat the previous records as background only. Never invent, diagnose, prescribe, or change medication instructions.
 - If the patient reports chest pain, severe trouble breathing, stroke symptoms, severe bleeding, loss of consciousness, or immediate danger, tell them to hang up and call 911 now. Do not continue the intake.
@@ -278,6 +299,9 @@ async function triggerVapiCall(config: any, phone: string, appointmentId: string
         firstMessage: appointmentId
           ? "Hi, this is Riley from MyAIDoctor. I am calling to help prepare for your upcoming appointment. Before we begin, do I have your permission to continue?"
           : "Hi, this is Riley from MyAIDoctor. How can I help you today?",
+        model: {
+          messages: [{ role: "system", content: systemPrompt }],
+        },
         variableValues: {
           patientContext: JSON.stringify(patientContext),
           appointmentId: appointmentId || "",

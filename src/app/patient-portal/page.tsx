@@ -156,7 +156,13 @@ export default function PatientPortalHome() {
                       {isPending && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300">{completionPct}% Done</span>}
                     </div>
                     <p className="text-sm text-slate-400"><Stethoscope className="w-3 h-3 inline mr-1" />Dr. {appt.provider?.lastName} — {dayLabel}, {apptDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</p>
-                    <p className="text-[11px] text-slate-500">{appt.clinic?.name}</p>
+                    <p className="text-[11px] text-slate-500">{appt.clinic?.name} · {appt.duration || 30} minutes · {(appt.status || "SCHEDULED").replace(/_/g, " ")}</p>
+                    {(appt.reasonForVisit || appt.chiefComplaint) && (
+                      <div className="mt-2 space-y-0.5 text-[11px] text-slate-400">
+                        {appt.reasonForVisit && <p><span className="text-slate-500">Reason:</span> {appt.reasonForVisit}</p>}
+                        {appt.chiefComplaint && <p><span className="text-slate-500">Concern:</span> {appt.chiefComplaint}</p>}
+                      </div>
+                    )}
                     {hasIntake && appt.preVisitBrief?.chiefComplaint && (
                       <p className="text-[11px] text-slate-500 mt-1">Chief complaint: {appt.preVisitBrief.chiefComplaint}</p>
                     )}
@@ -222,8 +228,10 @@ export default function PatientPortalHome() {
           <p className="text-xs text-slate-400">Join the cancellation waitlist. If a slot opens up, you'll get an SMS, email, and in-app notification — first to claim wins!</p>
         </div>
         <button onClick={async () => {
-          const res = await fetch("/api/waitlist", { method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "add", patientId: patient?.id, preference: "anytime", addedBy: "patient" }) });
+          const res = await fetch("/api/waitlist", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "add", patientId: patient?.id, preference: "anytime", addedBy: "patient" })
+          });
           const data = await res.json();
           if (data.error) alert(data.error);
           else alert("You've been added to the waitlist! We'll notify you when a slot opens up.");
