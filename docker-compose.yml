@@ -22,11 +22,11 @@ services:
       - postgres_data:/var/lib/postgresql/data
 
     networks:
-      - myaidocnetwork
+      - global-network
 
 volumes:
   postgres_data:
 
 networks:
-  myaidocnetwork:
-    name: myaidocnetwork
+  global-network:
+    name: global-network
