@@ -296,7 +296,8 @@ function IntakeChat() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok || !data.success) {
-        throw new Error(data.error || data.details || "We could not start the call. Please try again.");
+        const providerError = [data.error, data.details].filter(Boolean).join(": ");
+        throw new Error(providerError || "We could not start the call. Please try again.");
       }
 
       setCallResult(data);
