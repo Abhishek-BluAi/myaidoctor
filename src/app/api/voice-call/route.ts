@@ -275,8 +275,13 @@ async function triggerVapiCall(config: any, phone: string, appointmentId: string
     if (config.vapiAgentId) {
       payload.assistantId = config.vapiAgentId;
       payload.assistantOverrides = {
+        firstMessage: appointmentId
+          ? "Hi, this is Riley from MyAIDoctor. I am calling to help prepare for your upcoming appointment. Before we begin, do I have your permission to continue?"
+          : "Hi, this is Riley from MyAIDoctor. How can I help you today?",
         variableValues: {
           patientContext: JSON.stringify(patientContext),
+          appointmentId: appointmentId || "",
+          callRequestId,
         },
       };
     } else {
