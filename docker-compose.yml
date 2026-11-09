@@ -12,7 +12,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=global-network"
-      - "traefik.http.routers.myaidoctor.rule=Host(`myaidoc.ai`, `myaidoc.io`, `myaidoctor.io`, `myaidoc.bluai.ai`)"
+      - "traefik.http.routers.myaidoctor.rule=Host(`myaidoc.ai`) || Host(`myaidoc.io`) || Host(`myaidoctor.io`) || Host(`myaidoc.bluai.ai`)"
       - "traefik.http.routers.myaidoctor.entrypoints=websecure"
       - "traefik.http.routers.myaidoctor.tls=true"
       - "traefik.http.routers.myaidoctor.tls.certresolver=cert-resolver"
