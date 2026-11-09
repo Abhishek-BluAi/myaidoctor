@@ -10,7 +10,7 @@ services:
       - DATABASE_URL=postgresql://myaidoctor:myaidoctor_pass@db:5432/myaidoctor_db?schema=public
       - NODE_OPTIONS=--dns-result-order=ipv4first
     networks:
-      - myaidocnetwork
+      - global-network
 
   db:
     image: postgres:15-alpine
