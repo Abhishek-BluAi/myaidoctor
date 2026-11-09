@@ -300,6 +300,8 @@ async function triggerVapiCall(config: any, phone: string, appointmentId: string
           ? "Hi, this is Riley from MyAIDoctor. I am calling to help prepare for your upcoming appointment. Before we begin, do I have your permission to continue?"
           : "Hi, this is Riley from MyAIDoctor. How can I help you today?",
         model: {
+          provider: "openai",
+          model: "gpt-4o-mini",
           messages: [{ role: "system", content: systemPrompt }],
         },
         variableValues: {

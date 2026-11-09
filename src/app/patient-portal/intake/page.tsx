@@ -278,8 +278,8 @@ function IntakeChat() {
 
   async function requestCall() {
     const phoneNumber = callPhone.trim();
-    if (!phoneNumber) {
-      setCallError("Enter the phone number where you want to receive the call.");
+    if (!phoneNumber || !/^\+\d{7,14}$/.test(phoneNumber)) {
+      setCallError("Enter a valid phone number with country code, for example +12485550123.");
       return;
     }
 
@@ -360,8 +360,13 @@ function IntakeChat() {
           <p className="text-sm leading-6 text-slate-400">Enter the number where you want to receive your private AI pre-visit call.</p>
         </div>
         <form onSubmit={e => { e.preventDefault(); requestCall(); }} className="card p-4 space-y-3">
-          <label htmlFor="call-phone" className="text-xs font-medium text-slate-400">Phone number</label>
-          <input id="call-phone" type="tel" inputMode="tel" autoComplete="tel" autoFocus value={callPhone} onChange={e => setCallPhone(e.target.value)} placeholder="(248) 555-0123" className="input-field" />
+          <label htmlFor="call-phone" className="text-xs font-medium text-slate-400">Phone number with country code</label>
+          <input id="call-phone" type="tel" inputMode="numeric" autoComplete="tel" autoFocus value={callPhone} onChange={e => {
+            const digits = e.target.value.replace(/\D/g, "").slice(0, 15);
+            setCallPhone(digits ? `+${digits}` : "");
+            setCallError("");
+          }} placeholder="+12485550123" maxLength={16} className="input-field" />
+          <p className="text-[11px] text-slate-500">Include the country code. Example: +12485550123</p>
           {callError && <p className="flex items-start gap-2 text-xs text-red-300"><AlertCircle className="w-4 h-4 shrink-0" />{callError}</p>}
           <button type="submit" disabled={!callPhone.trim()} className="btn-primary w-full justify-center disabled:opacity-50"><Phone className="w-4 h-4" />Call me</button>
         </form>
